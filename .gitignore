@@ -3,3 +3,5 @@
 
 # python compiled files
 *.pyc
+*.csv
+*.txt
