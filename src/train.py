@@ -1,5 +1,11 @@
+import os
+
 from lightning import Trainer
+from lightning.pytorch.loggers import CSVLogger
 from transformers import BertModel
+
+import pandas as pd
+import matplotlib.pyplot as plt
 
 from model import LitPhraseClassifier
 from dataset import FinancialPhraseDataset
@@ -21,12 +27,20 @@ def train(model_path=None, max_epochs=5):
     else:
         lit_model = LitPhraseClassifier(bert=bert)
 
-    trainer = Trainer(max_epochs=max_epochs)
+    logger = CSVLogger("logs", name="sentiment-analysis", version=0)
+    trainer = Trainer(max_epochs=max_epochs, logger=logger)
     trainer.fit(model=lit_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
     # save model
     default_path = 'lit-phrases-bert' + '.ckpt'
     trainer.save_checkpoint(default_path if not model_path else model_path)
+
+    # plot metrics
+    csv = os.path.join(logger.log_dir, 'sentiment-analysis', 'version_0', 'metrics.csv')
+
+    df = pd.read_csv(csv)
+    df[['train_loss', 'val_loss']].plot()
+    plt.show()
 
 
 if __name__ == '__main__':

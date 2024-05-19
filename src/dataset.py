@@ -1,5 +1,3 @@
-# https://www.kaggle.com/datasets/ankurzing/sentiment-analysis-for-financial-news
-# https://www.kaggle.com/datasets/ankurzing/sentiment-analysis-for-financial-news/download?datasetVersionNumber=5
 import pandas as pd
 import torch
 
@@ -60,17 +58,13 @@ class Splitter:
         return train_path, test_path
 
     def split(self, df: pd.DataFrame):
-        # creates a random permutation of the indices
         indices = torch.randperm(len(df)).tolist()
 
-        # calculates the size of the training set
         train_size = int(self.train_size * len(df))
 
-        # splits the indices
         train_indices = indices[:train_size]
         test_indices = indices[train_size:]
 
-        # saves the datasets to the directory, with paths: train.csv, test.csv
         train_df = df.loc[train_indices]
         test_df = df.loc[test_indices]
 
@@ -97,7 +91,6 @@ class FinancialPhraseDataset(PhraseDataset):
                  filename='data/all-data.csv',
                  max_len=512,
                  seed=None):
-        # if file doesnt exist, test.txt if archive.zip (downloaded from kaggle) exists
         splitter = Splitter(seed=seed)
 
         train_path, test_path = splitter.paths
