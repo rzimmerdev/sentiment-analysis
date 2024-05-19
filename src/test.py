@@ -1,3 +1,8 @@
+import os
+
+import pandas as pd
+from matplotlib import pyplot as plt
+
 import torch
 from tqdm import tqdm
 from transformers import BertModel
@@ -13,6 +18,7 @@ def test(model_path):
 
     bert = BertModel.from_pretrained('bert-base-uncased')
 
+    model_path += '.ckpt'
     lit_model = LitPhraseClassifier.load_from_checkpoint(model_path, bert=bert)
     lit_model.eval()
 
@@ -58,6 +64,34 @@ def evaluate(y_pred, y_true):
     print(conf_matrix)
 
 
+def metrics(version):
+    csv = os.path.join('logs/sentiment-analysis', f'version_{version}', 'metrics.csv')
+
+    df = pd.read_csv(csv)
+    x = df['step']
+    y = df[['train_loss_step']]
+
+    # moving average
+    y = y.ffill().rolling(window=10).mean()
+
+    plt.plot(x, y)
+    plt.xlabel('Step')
+    plt.ylabel('Loss')
+    plt.title('Training Loss')
+    plt.show()
+
+
 # Example usage
 if __name__ == "__main__":
-    test('lit-phrases-bert.ckpt')
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Test a sentiment analysis model')
+    parser.add_argument('--pre-trained', type=str, help='Path to a pre-trained model', default=None)
+    parser.add_argument('--plot', type=str, help='Plot training loss', default=None)
+    args = parser.parse_args()
+
+    if args.plot:
+        metrics(args.plot)
+
+    if args.pre_trained:
+        test(args.pre_trained)
