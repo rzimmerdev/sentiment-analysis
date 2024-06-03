@@ -57,51 +57,51 @@ class LitBoWClassifier(LightningModule):
 
 
 class LSTMClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super().__init__()
-        # simple LSTM + CNN1D model
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim, num_layers=1, bidirectional=False, dropout=0.5):
+        super(LSTMClassifier, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embedding_dim)
+        self.lstm = nn.LSTM(embedding_dim,
+                            hidden_dim,
+                            num_layers=num_layers,
+                            bidirectional=bidirectional,
+                            batch_first=True,
+                            dropout=dropout)
+        self.dropout = nn.Dropout(dropout)
+        self.fc = nn.Linear(hidden_dim * (2 if bidirectional else 1), output_dim)
 
-        self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
-        self.conv1 = nn.Conv1d(hidden_dim, hidden_dim, kernel_size=3, padding=1)
-        self.fc = nn.Linear(hidden_dim, output_dim)
+    def forward(self, x, lengths):
+        embedded = self.embedding(x)
+        packed_embedded = nn.utils.rnn.pack_padded_sequence(embedded, lengths, batch_first=True, enforce_sorted=False)
+        packed_output, (hidden, cell) = self.lstm(packed_embedded)
+        output, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
+        
+        if self.lstm.bidirectional:
+            hidden = torch.cat((hidden[-2,:,:], hidden[-1,:,:]), dim = 1)
+        else:
+            hidden = hidden[-1,:,:]
 
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        lstm_out = lstm_out.permute(0, 2, 1)
-        conv_out = self.conv1(lstm_out)
-        conv_out = conv_out.permute(0, 2, 1)
-        output = self.fc(conv_out)
-        return output
+        hidden = self.dropout(hidden)
+
+        return self.fc(hidden)
 
 
 class LitLSTMClassifier(LightningModule):
-    def __init__(self, input_dim, hidden_dim, output_dim, lr=1e-3):
-        super().__init__()
-        self.model = LSTMClassifier(input_dim, hidden_dim, output_dim)
+    def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim, num_layers=1, bidirectional=False, dropout=0.5, lr=1e-3):
+        super(LitLSTMClassifier, self).__init__()
+        self.model = LSTMClassifier(vocab_size, embedding_dim, hidden_dim, output_dim, num_layers, bidirectional, dropout)
         self.lr = lr
         self.loss = nn.CrossEntropyLoss()
         self.accuracy = Accuracy(task='multiclass', num_classes=output_dim)
 
-    def forward(self, input_ids):
-        # pass variable length input through embedding layer
-        packed_input = nn.utils.rnn.pack_padded_sequence(input_ids, input_ids.shape[1], batch_first=True)
-        packed_output, (hidden, cell) = self.model.lstm(packed_input)
-
-        # get the last hidden state
-        lstm_out, _ = nn.utils.rnn.pad_packed_sequence(packed_output, batch_first=True)
-
-        lstm_out = lstm_out.permute(0, 2, 1)
-        conv_out = self.model.conv1(lstm_out)
-        conv_out = conv_out.permute(0, 2, 1)
-        output = self.model.fc(conv_out)
-
-        return output
+    def forward(self, input_ids, lengths):
+        return self.model(input_ids, lengths)
 
     def training_step(self, batch, batch_idx):
         input_ids = batch['input_ids']
+        lengths = batch['lengths']
         target = batch['target']
 
-        output = self(input_ids)
+        output = self(input_ids, lengths)
 
         loss = self.loss(output, target)
         acc = self.accuracy(output, target)
@@ -113,9 +113,10 @@ class LitLSTMClassifier(LightningModule):
 
     def test_step(self, batch, batch_idx):
         input_ids = batch['input_ids']
+        lengths = batch['lengths']
         target = batch['target']
 
-        output = self(input_ids)
+        output = self(input_ids, lengths)
 
         loss = self.loss(output, target)
         acc = self.accuracy(output, target)
