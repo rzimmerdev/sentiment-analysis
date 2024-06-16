@@ -8,6 +8,22 @@ from transformers import AutoTokenizer
 
 class PhraseDataset(Dataset):
     def __init__(self, x_col, y_col, tokenizer: torch.nn.Module, data: pd.DataFrame, max_len: int):
+        """
+        Initializes the dataset
+
+        Parameters
+        ----------
+        x_col: str
+            The column name of the input data
+        y_col: str
+            The column name of the target data
+        tokenizer: torch.nn.Module
+            The tokenizer to use
+        data: pd.DataFrame
+            The data to use
+        max_len: int
+            The maximum length of the input data
+        """
         self.tokenizer = tokenizer
         self.data = data
         self.max_len = max_len
@@ -46,12 +62,25 @@ class PhraseDataset(Dataset):
 
 class Splitter:
     def __init__(self, train_size=0.8, seed=42, folder='data'):
+        """"
+        Initializes the splitter
+
+        Parameters
+        ----------
+        train_size: float
+            The proportion of the data to use for training
+        seed: int
+            The seed to use
+        folder: str
+            The folder to save the data
+        """
         self.train_size = train_size
         self.seed = seed
         self.folder = folder
 
     @property
     def paths(self):
+        """"Returns the paths of the train and test data."""
         folder_path = self.folder.split('/')
         if len(folder_path) > 1:
             folder = "/".join(folder_path[:-1])
@@ -64,6 +93,14 @@ class Splitter:
         return train_path, test_path
 
     def split(self, df: pd.DataFrame):
+        """
+        Splits the data into train and test sets
+
+        Parameters
+        ----------
+        df: pd.DataFrame
+            The data to split
+        """
         indices = torch.randperm(len(df)).tolist()
 
         train_size = int(self.train_size * len(df))
@@ -97,6 +134,22 @@ class FinancialPhraseDataset(PhraseDataset):
                  filename='data/all-data.csv',
                  max_len=512,
                  seed=None):
+        """
+        Initializes the dataset
+
+        Parameters
+        ----------
+        tokenizer: torch.nn.Module
+            The tokenizer to use
+        path: str
+            The path to the dataset
+        filename: str
+            The filename of the dataset
+        max_len: int
+            The maximum length of the input data
+        seed: int
+            The seed to use
+        """
         splitter = Splitter(seed=seed)
 
         train_path, test_path = splitter.paths
@@ -125,12 +178,36 @@ class FinancialPhraseDataset(PhraseDataset):
         self.test_data = self.preprocess(self.test_data)
 
     def preprocess(self, data):
+        """
+        Preprocesses the data by converting the target labels to integers
+
+        Parameters
+        ----------
+        data: pd.DataFrame
+            The data to preprocess
+        """
         data[0] = data[0].map({'neutral': 0, 'positive': 1, 'negative': 2})
         data = data.dropna()
         data = data.reset_index(drop=True)
         return data
 
     def get_data_loaders(self, batch_size=8, shuffle=True, num_workers=0, train_size=0.8, train=True):
+        """
+        Returns the train and validation data loaders
+
+        Parameters
+        ----------
+        batch_size: int
+            The batch size
+        shuffle: bool
+            Whether to shuffle the data
+        num_workers: int
+            The number of workers to use for loading the data
+        train_size: float
+            The proportion of the data to use for training
+        train: bool
+            Whether to return the train and validation data loaders or the test data loader
+        """
         if train:
             train_size = int(train_size * len(self.data))
             val_size = len(self.data) - train_size

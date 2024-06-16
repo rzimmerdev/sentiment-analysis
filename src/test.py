@@ -10,6 +10,24 @@ from dataset import FinancialPhraseDataset
 
 
 def evaluate(model, model_dir=None):
+    """"
+    Evaluate a sentiment analysis model.
+
+    The metrics calculated are:
+    - Test Accuracy
+    - Test Loss
+    - F1 Score
+    - Confusion Matrix
+    - ROC Curve and AUC
+    - AIC Score
+
+    Parameters
+    ----------
+    model: str
+        The model to evaluate, one of 'transformer', 'bow', 'w2v'.
+    model_dir: str
+        The path to the model to evaluate
+    """
     dataset = FinancialPhraseDataset()
     test_loader = dataset.get_data_loaders(train=False, batch_size=64, num_workers=8, train_size=1)
     model_path = f"{model_dir}/{model}"
