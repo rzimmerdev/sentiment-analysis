@@ -9,23 +9,24 @@ from models.w2v import LitWord2VecClassifier
 from dataset import FinancialPhraseDataset
 
 
-def evaluate(model, model_path=None):
+def evaluate(model, model_dir=None):
     dataset = FinancialPhraseDataset()
-    test_loader = dataset.get_data_loaders(train=False, batch_size=8, num_workers=4, train_size=1)
+    test_loader = dataset.get_data_loaders(train=False, batch_size=64, num_workers=8, train_size=1)
+    model_path = f"{model_dir}/{model}"
 
     if model == 'bow':
         lit_model = LitBowClassifier(2000, 6)
-        vectorizer_path = model_path + '.pkl'
-        model_path = model_path + '.pth'
-        lit_model.load(model_path, vectorizer_path)
+        weights = model_path + '.pth'
+        vectorizer = model_path + '.pkl'
+        lit_model.load(weights, vectorizer)
     elif model == 'w2v':
-        lit_model = LitWord2VecClassifier(embedding_dim=512, hidden_dim=256, num_layers=8)
-        vectorizer_path = model_path + '.model'
-        model_path = model_path + '.pth'
-        lit_model.load(model_path, vectorizer_path)
+        lit_model = LitWord2VecClassifier(embedding_dim=1000, hidden_dim=64, num_layers=6)
+        weights = model_path + '.pth'
+        vectorizer = model_path + '.model'
+        lit_model.load(weights, vectorizer)
     elif model == 'transformer':
-        model_path = model_path + '.ckpt'
-        lit_model = LitTransformerClassifier.load_from_checkpoint(model_path)
+        weights = model_path + '.ckpt'
+        lit_model = LitTransformerClassifier.load_from_checkpoint(weights, hidden_layers=3)
     else:
         raise ValueError('Unknown model')
 
@@ -74,9 +75,15 @@ def evaluate(model, model_path=None):
         plt.ylabel('True Positive Rate')
         plt.title('Receiver Operating Characteristic')
         plt.legend(loc="lower right")
-        plt.savefig(f'{model}_roc_curve.png')
+        plt.savefig(f'results/{model}_class_{i}_roc.png')
 
-        print(f'Class {i} ROC AUC: {roc_auc}')
+    plt.figure()
+    plt.imshow(conf_matrix, interpolation='nearest', cmap='viridis')
+    plt.title('Confusion Matrix')
+    plt.colorbar()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.savefig(f'results/{model}_confusion_matrix.png')
 
     # AIC Score (assuming a binomial model, and AIC = 2k - 2ln(L))
     # k = num of model params
@@ -87,7 +94,6 @@ def evaluate(model, model_path=None):
     print(f'Test Accuracy: {test_accuracy}')
     print(f'Test Loss: {test_loss}')
     print(f'F1 Score: {f1}')
-    print(f'Confusion Matrix:\n{conf_matrix}')
     print(f'AIC: {AIC}')
 
 

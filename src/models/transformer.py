@@ -89,9 +89,6 @@ class LitTransformerClassifier(LightningModule):
         loss = self.loss(output, target)
         acc = self.accuracy(output, target)
 
-        self.log('test_loss', loss, on_step=True, on_epoch=True)
-        self.log('test_acc', acc, on_step=True, on_epoch=True)
-
         return output, target, loss, acc
 
     def configure_optimizers(self):

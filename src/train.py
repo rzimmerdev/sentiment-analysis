@@ -35,7 +35,7 @@ def plot_training_history(log_dir, model):
     fig.tight_layout()
     plt.title(f'Training History - {model}')
     fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.9))
-    plt.savefig(f'{model}_training_history.png')
+    plt.savefig(f'results/{model}_training_history.png')
 
 
 def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
@@ -52,7 +52,7 @@ def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
         lit_model.fit_vectorizer(dataset.data[1])
     elif model == 'w2v':
         model_path = 'checkpoints/w2v'
-        lit_model = LitWord2VecClassifier(embedding_dim=512, hidden_dim=256, num_layers=8, lr=lr)
+        lit_model = LitWord2VecClassifier(embedding_dim=1000, hidden_dim=64, num_layers=6, lr=lr)
         lit_model.fit_vectorizer(dataset.data[1])
     elif model == 'transformer':
         model_path = 'checkpoints/transformer'

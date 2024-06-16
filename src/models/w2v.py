@@ -28,14 +28,18 @@ class Word2VecVectorizer:
 
 
 class Word2VecClassifier(nn.Module):
-    def __init__(self, embedding_dim, hidden_dim, output_dim, num_layers=1):
+    def __init__(self, embedding_dim, hidden_dim, output_dim, num_recurrent_layers=2, num_layers=2):
         super().__init__()
         self.softmax = nn.Softmax(dim=1)
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True)
+        self.lstm = nn.LSTM(embedding_dim, embedding_dim, num_layers=num_recurrent_layers, batch_first=True)
         self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(embedding_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, output_dim),
+            *[nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU()
+            ) for _ in range(num_layers - 2)],
+            nn.Linear(hidden_dim, output_dim),
             self.softmax
         )
 
@@ -101,13 +105,6 @@ class LitWord2VecClassifier(LightningModule):
 
         loss = self.loss(output, target)
         acc = self.accuracy(output, target)
-
-        self.log('test_loss', loss, on_step=True, on_epoch=True)
-        self.log('test_acc', acc, on_step=True, on_epoch=True)
-
-        pred = output.argmax(dim=1)
-        self.log('test_pred', pred, on_step=True, on_epoch=True)
-        self.log('test_target', target, on_step=True, on_epoch=True)
 
         return output, target, loss, acc
 
