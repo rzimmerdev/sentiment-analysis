@@ -12,6 +12,16 @@ from dataset import FinancialPhraseDataset
 
 
 def plot_training_history(log_dir, model):
+    """"
+    Plot the training history of a model.
+
+    Parameters
+    ----------
+    log_dir: str
+        The path to the log directory of the model
+    model: str
+        The model name used in the title of the plot.
+    """
     metrics = pd.read_csv(f'{log_dir}/metrics.csv')
     plt.figure()
 
@@ -39,6 +49,22 @@ def plot_training_history(log_dir, model):
 
 
 def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
+    """
+    Train a sentiment analysis model.
+
+    Parameters
+    ----------
+    model: str
+        The model to train, one of 'transformer', 'bow', 'w2v'.
+    max_epochs: int
+        The maximum number of epochs to train for
+    batch_size: int
+        The batch size
+    num_workers: int
+        The number of workers to use
+    lr: float
+        The learning rate
+    """
     dataset = FinancialPhraseDataset()
     print(f"Training {model} model")
     print(f"Maimum number of epochs: {max_epochs}. "
