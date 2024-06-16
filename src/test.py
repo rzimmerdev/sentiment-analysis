@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -8,18 +9,37 @@ from tqdm import tqdm
 from transformers import BertModel
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
-from src.dataset import FinancialPhraseDataset
-from src.model import LitPhraseClassifier
+from dataset import FinancialPhraseDataset
+from models.transformer import LitTransformerClassifier
+from models.bow import LitBowClassifier
+from models.w2v import LitWord2VecClassifier
 
 
-def test(model_path):
+class Models(Enum):
+    transformer = 'transformer'
+    bow = 'bow'
+    w2v = 'w2v'
+
+
+def test(model, model_path):
     dataset = FinancialPhraseDataset()
     test_loader = dataset.get_data_loaders(batch_size=8, num_workers=4, train_size=0.9, train=False)
 
-    bert = BertModel.from_pretrained('bert-base-uncased')
+    if model == Models.transformer:
+        lit_model = LitTransformerClassifier.load_from_checkpoint(model_path)
+    elif model == Models.bow:
+        lit_model = LitBowClassifier(input_dim=1000)
+        model_path = model_path + '.pth'
+        vectorizer_path = model_path + '.pkl'
+        lit_model.load(model_path, vectorizer_path)
+    elif model == Models.w2v:
+        lit_model = LitWord2VecClassifier(embedding_dim=100, hidden_dim=128)
+        model_path = model_path + '.pth'
+        vectorizer_path = model_path + '.model'
+        lit_model.load(model_path, vectorizer_path)
+    else:
+        raise ValueError('Unknown model')
 
-    model_path += '.ckpt'
-    lit_model = LitPhraseClassifier.load_from_checkpoint(model_path, bert=bert)
     lit_model.eval()
 
     y_true = []

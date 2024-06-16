@@ -141,7 +141,7 @@ class FinancialPhraseDataset(PhraseDataset):
             val_loader = torch.utils.data.DataLoader(
                 val_dataset,
                 batch_size=batch_size,
-                shuffle=shuffle,
+                shuffle=False,
                 num_workers=num_workers
             )
 
