@@ -1,18 +1,94 @@
-import os
 from enum import Enum
 
-import pandas as pd
-from matplotlib import pyplot as plt
-
-import torch
-from tqdm import tqdm
-from transformers import BertModel
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-
-from dataset import FinancialPhraseDataset
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc, confusion_matrix, f1_score, accuracy_score, log_loss
 from models.transformer import LitTransformerClassifier
 from models.bow import LitBowClassifier
 from models.w2v import LitWord2VecClassifier
+from dataset import FinancialPhraseDataset
+
+
+def evaluate(model, model_path=None):
+    dataset = FinancialPhraseDataset()
+    test_loader = dataset.get_data_loaders(train=False, batch_size=8, num_workers=4, train_size=1)
+
+    if model == 'bow':
+        lit_model = LitBowClassifier(2000, 6)
+        vectorizer_path = model_path + '.pkl'
+        model_path = model_path + '.pth'
+        lit_model.load(model_path, vectorizer_path)
+    elif model == 'w2v':
+        lit_model = LitWord2VecClassifier(embedding_dim=512, hidden_dim=256, num_layers=8)
+        vectorizer_path = model_path + '.model'
+        model_path = model_path + '.pth'
+        lit_model.load(model_path, vectorizer_path)
+    elif model == 'transformer':
+        model_path = model_path + '.ckpt'
+        lit_model = LitTransformerClassifier.load_from_checkpoint(model_path)
+    else:
+        raise ValueError('Unknown model')
+
+    lit_model.eval()
+
+    # Calculate metrics
+    all_outputs = []
+    all_labels = []
+
+    for idx, batch in enumerate(test_loader):
+        output, target, _, _ = lit_model.test_step(batch, idx)
+
+        all_outputs.extend(output.tolist())
+        all_labels.extend(target.tolist())
+
+    outputs = np.array(all_outputs)
+    labels = np.array(all_labels)
+
+    pred = np.argmax(outputs, axis=1)
+    target = np.argmax(labels, axis=1)
+
+    # Accuracy (argmax, argmax
+    test_accuracy = accuracy_score(target, pred)
+
+    # Confusion Matrix
+    conf_matrix = confusion_matrix(target, pred)
+
+    # F1 Score
+    f1 = f1_score(target, pred, average='weighted')
+
+    # Log loss
+    test_loss = log_loss(all_labels, all_outputs)
+
+    # ROC Curve and AUC
+    for i in range(3):
+        fpr, tpr, _ = roc_curve(labels[:, i], outputs[:, i])
+        roc_auc = auc(fpr, tpr)
+
+    # Plot ROC Curve
+        plt.figure()
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label='ROC curve (area = %0.2f)' % roc_auc)
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        plt.savefig(f'{model}_roc_curve.png')
+
+        print(f'Class {i} ROC AUC: {roc_auc}')
+
+    # AIC Score (assuming a binomial model, and AIC = 2k - 2ln(L))
+    # k = num of model params
+    k = sum(p.numel() for p in lit_model.parameters())
+    L = -test_loss * len(all_labels)  # log-likelihood
+    AIC = 2 * k - 2 * L
+
+    print(f'Test Accuracy: {test_accuracy}')
+    print(f'Test Loss: {test_loss}')
+    print(f'F1 Score: {f1}')
+    print(f'Confusion Matrix:\n{conf_matrix}')
+    print(f'AIC: {AIC}')
 
 
 class Models(Enum):
@@ -21,97 +97,11 @@ class Models(Enum):
     w2v = 'w2v'
 
 
-def test(model, model_path):
-    dataset = FinancialPhraseDataset()
-    test_loader = dataset.get_data_loaders(batch_size=8, num_workers=4, train_size=0.9, train=False)
-
-    if model == Models.transformer:
-        lit_model = LitTransformerClassifier.load_from_checkpoint(model_path)
-    elif model == Models.bow:
-        lit_model = LitBowClassifier(input_dim=1000)
-        model_path = model_path + '.pth'
-        vectorizer_path = model_path + '.pkl'
-        lit_model.load(model_path, vectorizer_path)
-    elif model == Models.w2v:
-        lit_model = LitWord2VecClassifier(embedding_dim=100, hidden_dim=128)
-        model_path = model_path + '.pth'
-        vectorizer_path = model_path + '.model'
-        lit_model.load(model_path, vectorizer_path)
-    else:
-        raise ValueError('Unknown model')
-
-    lit_model.eval()
-
-    y_true = []
-    y_pred = []
-
-    for batch in tqdm(test_loader):
-        input_ids = batch['input_ids']
-        attention_mask = batch['attention_mask']
-        target = batch['target']
-
-        output = lit_model(input_ids, attention_mask)
-        _, predicted = torch.max(output, dim=1)
-
-        y_true.extend(target.tolist())
-        y_pred.extend(predicted.tolist())
-
-    evaluate(y_pred, y_true)
-
-
-def evaluate(y_pred, y_true):
-    mapping = {1: 'positive', 0: 'neutral', 2: 'negative'}
-
-    accuracy = accuracy_score(y_true=y_true, y_pred=y_pred)
-    print(f'Accuracy: {accuracy:.3f}')
-
-    unique_labels = set(y_true)
-
-    for label in unique_labels:
-        label_indices = [i for i in range(len(y_true))
-                         if y_true[i] == label]
-        label_y_true = [y_true[i] for i in label_indices]
-        label_y_pred = [y_pred[i] for i in label_indices]
-        accuracy = accuracy_score(label_y_true, label_y_pred)
-        print(f'Accuracy for label {mapping[label]}: {accuracy:.3f}')
-
-    class_report = classification_report(y_true=y_true, y_pred=y_pred)
-    print('\nClassification Report:')
-    print(class_report)
-
-    conf_matrix = confusion_matrix(y_true=y_true, y_pred=y_pred, labels=[0, 1, 2])
-    print('\nConfusion Matrix:')
-    print(conf_matrix)
-
-
-def metrics(version):
-    csv = os.path.join('logs/sentiment-analysis', f'version_{version}', 'metrics.csv')
-
-    df = pd.read_csv(csv)
-    x = df['step']
-    y = df[['train_loss_step']]
-
-    # moving average
-    y = y.ffill().rolling(window=10).mean()
-
-    plt.plot(x, y)
-    plt.xlabel('Step')
-    plt.ylabel('Loss')
-    plt.title('Training Loss')
-    plt.show()
-
-
-# Example usage
-if __name__ == "__main__":
+if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='Test a sentiment analysis model')
+    parser = argparse.ArgumentParser(description='Evaluate a sentiment analysis model')
+    parser.add_argument('--model', type=Models, help='Model to evaluate', default=Models.transformer)
     parser.add_argument('--pre-trained', type=str, help='Path to a pre-trained model', default=None)
-    parser.add_argument('--plot', type=str, help='Plot training loss', default=None)
     args = parser.parse_args()
-
-    if args.plot:
-        metrics(args.plot)
-
-    if args.pre_trained:
-        test(args.pre_trained)
+    evaluate(args.model.value, args.pre_trained)

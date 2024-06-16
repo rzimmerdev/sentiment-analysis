@@ -6,8 +6,8 @@ from sklearn.feature_extraction.text import CountVectorizer
 
 
 class BoWVectorizer:
-    def __init__(self, max_features=1000):
-        self.vectorizer = CountVectorizer(max_features=max_features)
+    def __init__(self, max_features=4000):
+        self.vectorizer = CountVectorizer(max_features=int(max_features))
 
     def fit_transform(self, texts):
         return self.vectorizer.fit_transform(texts).toarray()
@@ -30,6 +30,8 @@ class BowClassifier(nn.Module):
     def __init__(self, input_dim, hidden_layers=5, output_dim=3):
         super().__init__()
 
+        self.softmax = nn.Softmax(dim=1)
+
         self.sequential = nn.Sequential(
             *[nn.Sequential(
                 nn.Linear(input_dim, input_dim),
@@ -37,7 +39,8 @@ class BowClassifier(nn.Module):
             ) for _ in range(hidden_layers - 1)],
             nn.Linear(input_dim, input_dim // 2),
             nn.ReLU(),
-            nn.Linear(input_dim // 2, output_dim)
+            nn.Linear(input_dim // 2, output_dim),
+            self.softmax
         )
 
     def forward(self, x):
@@ -45,9 +48,10 @@ class BowClassifier(nn.Module):
 
 
 class LitBowClassifier(LightningModule):
-    def __init__(self, input_dim, lr=1e-3):
+    def __init__(self, input_dim, hidden_layers=5, lr=1e-3):
         super().__init__()
-        self.model = BowClassifier(input_dim, output_dim=3)
+        input_dim = int(input_dim)
+        self.model = BowClassifier(input_dim, hidden_layers=hidden_layers)
         self.lr = lr
         self.loss = nn.CrossEntropyLoss()
         self.accuracy = Accuracy(task='multiclass', num_classes=3)
@@ -66,7 +70,7 @@ class LitBowClassifier(LightningModule):
         output = self(input_ids)
 
         loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
 
         self.log('train_loss', loss, on_epoch=True, prog_bar=True)
         self.log('train_acc', acc, on_epoch=True, prog_bar=True)
@@ -83,7 +87,7 @@ class LitBowClassifier(LightningModule):
         output = self(input_ids)
 
         loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
 
         self.log('val_loss', loss, on_step=True, on_epoch=True)
         self.log('val_acc', acc, on_step=True, on_epoch=True)
@@ -102,10 +106,7 @@ class LitBowClassifier(LightningModule):
         loss = self.loss(output, target)
         acc = self.accuracy(output, target)
 
-        self.log('test_loss', loss, on_step=True, on_epoch=True)
-        self.log('test_acc', acc, on_step=True, on_epoch=True)
-
-        return loss
+        return output, target, loss, acc
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)

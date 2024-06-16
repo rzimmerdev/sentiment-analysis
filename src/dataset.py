@@ -1,5 +1,6 @@
 import pandas as pd
 import torch
+import torch.nn.functional as F
 
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer
@@ -13,6 +14,8 @@ class PhraseDataset(Dataset):
 
         self.x_col = x_col
         self.y_col = y_col
+
+        self.num_classes = len(self.data[self.y_col].unique())
 
     def __len__(self):
         return len(self.data)
@@ -30,11 +33,14 @@ class PhraseDataset(Dataset):
             truncation=True
         )
 
+        label = self.data.loc[item, self.y_col]
+        target = F.one_hot(torch.tensor(label, dtype=torch.long), num_classes=self.num_classes)
+
         return {
             "phrase": phrase,
             "input_ids": encoding["input_ids"].flatten(),
             "attention_mask": encoding["attention_mask"].flatten(),
-            "target": torch.tensor(self.data.loc[item, self.y_col], dtype=torch.long)
+            "target": target.float()
         }
 
 

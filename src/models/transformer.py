@@ -19,6 +19,7 @@ class TransformerClassifier(nn.Module):
         for param in self.bert.encoder.layer[-1].parameters():
             param.requires_grad = True
 
+        self.softmax = nn.Softmax(dim=1)
         self.sequential = nn.Sequential(
             *[nn.Sequential(
                 nn.Linear(embedding_dim, embedding_dim),
@@ -26,7 +27,8 @@ class TransformerClassifier(nn.Module):
             ) for _ in range(hidden_layers - 1)],
             nn.Linear(embedding_dim, embedding_dim // 2),
             nn.ReLU(),
-            nn.Linear(embedding_dim // 2, output_dim)
+            nn.Linear(embedding_dim // 2, output_dim),
+            self.softmax
         )
 
     def forward(self, input_ids, attention_mask):
@@ -36,10 +38,10 @@ class TransformerClassifier(nn.Module):
 
 
 class LitTransformerClassifier(LightningModule):
-    def __init__(self, lr=1e-3):
+    def __init__(self, hidden_layers=5, lr=1e-3):
         super().__init__()
-        bert = BertModel.from_pretrained('bert-base-uncased')
-        self.model = TransformerClassifier(bert, output_dim=3)
+        bert = BertModel.from_pretrained('prajjwal1/bert-small')
+        self.model = TransformerClassifier(bert, hidden_layers=hidden_layers, output_dim=3)
         self.lr = lr
         self.loss = nn.CrossEntropyLoss()
         self.accuracy = Accuracy(task='multiclass', num_classes=3)
@@ -55,7 +57,7 @@ class LitTransformerClassifier(LightningModule):
         output = self(input_ids, attention_mask)
 
         loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
 
         self.log('train_loss', loss, on_epoch=True, prog_bar=True)
         self.log('train_acc', acc, on_epoch=True, prog_bar=True)
@@ -90,7 +92,7 @@ class LitTransformerClassifier(LightningModule):
         self.log('test_loss', loss, on_step=True, on_epoch=True)
         self.log('test_acc', acc, on_step=True, on_epoch=True)
 
-        return loss
+        return output, target, loss, acc
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)

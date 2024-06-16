@@ -8,7 +8,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 class Word2VecVectorizer:
-    def __init__(self, embedding_dim=100):
+    def __init__(self, embedding_dim=2000):
         self.embedding_dim = embedding_dim
         self.model = None
 
@@ -30,11 +30,13 @@ class Word2VecVectorizer:
 class Word2VecClassifier(nn.Module):
     def __init__(self, embedding_dim, hidden_dim, output_dim, num_layers=1):
         super().__init__()
+        self.softmax = nn.Softmax(dim=1)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True)
         self.classifier = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
-            nn.Linear(hidden_dim // 2, output_dim)
+            nn.Linear(hidden_dim // 2, output_dim),
+            self.softmax
         )
 
     def forward(self, x):
@@ -43,7 +45,7 @@ class Word2VecClassifier(nn.Module):
 
 
 class LitWord2VecClassifier(LightningModule):
-    def __init__(self, embedding_dim, hidden_dim, output_dim=3, lr=1e-3, num_layers=1):
+    def __init__(self, embedding_dim, hidden_dim, output_dim=3, lr=1e-3, num_layers=8):
         super().__init__()
         self.model = Word2VecClassifier(embedding_dim, hidden_dim, output_dim, num_layers)
         self.lr = lr
@@ -64,7 +66,7 @@ class LitWord2VecClassifier(LightningModule):
         output = self(input_ids)
 
         loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
 
         self.log('train_loss', loss, on_epoch=True, prog_bar=True)
         self.log('train_acc', acc, on_epoch=True, prog_bar=True)
@@ -81,7 +83,7 @@ class LitWord2VecClassifier(LightningModule):
         output = self(input_ids)
 
         loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
 
         self.log('val_loss', loss, on_step=True, on_epoch=True)
         self.log('val_acc', acc, on_step=True, on_epoch=True)
@@ -103,7 +105,11 @@ class LitWord2VecClassifier(LightningModule):
         self.log('test_loss', loss, on_step=True, on_epoch=True)
         self.log('test_acc', acc, on_step=True, on_epoch=True)
 
-        return loss
+        pred = output.argmax(dim=1)
+        self.log('test_pred', pred, on_step=True, on_epoch=True)
+        self.log('test_target', target, on_step=True, on_epoch=True)
+
+        return output, target, loss, acc
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
