@@ -182,8 +182,7 @@ Para acessar os gráficos de métricas, veja a pasta `results`.
 - F1 Score: 0.6822113699098331
 - AIC: 44034747.60471523
 
-![Train Loss](https://gi
-
+![Train Loss](results/w2v_training_history.png)
 
 ### W2V:
 
