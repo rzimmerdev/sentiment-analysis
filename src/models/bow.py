@@ -21,16 +21,6 @@ class BoWVectorizer:
     def fit_transform(self, texts):
         """
         Fit the vectorizer and transform the texts.
-
-        Parameters
-        ----------
-        texts: list
-            The texts to transform
-
-        Returns
-        -------
-        np.ndarray
-            The transformed texts
         """
         return self.vectorizer.fit_transform(texts).toarray()
 
@@ -51,27 +41,11 @@ class BoWVectorizer:
         return self.vectorizer.transform(texts).toarray()
 
     def save(self, path):
-        """
-        Save the vectorizer to a file.
-
-        Parameters
-        ----------
-        path: str
-            The path to save the vectorizer to
-        """
         import pickle
         with open(path, 'wb') as f:
             pickle.dump(self.vectorizer, f)
 
     def load(self, path):
-        """
-        Load the vectorizer from a file.
-
-        Parameters
-        ----------
-        path: str
-            The path to load the vectorizer from
-        """
         import pickle
         with open(path, 'rb') as f:
             self.vectorizer = pickle.load(f)
@@ -108,19 +82,6 @@ class BowClassifier(nn.Module):
         )
 
     def forward(self, x):
-        """"
-        Forward pass.
-        
-        Parameters
-        ----------
-        x: torch.Tensor
-            The input tensor
-        
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        """
         return self.sequential(x)
 
 
@@ -147,19 +108,6 @@ class LitBowClassifier(LightningModule):
         self.vectorizer = BoWVectorizer(max_features=input_dim)
 
     def forward(self, x):
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        x: torch.Tensor
-            The input tensor
-
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        """
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
@@ -191,38 +139,6 @@ class LitBowClassifier(LightningModule):
 
         self.log('train_loss', loss, on_epoch=True, prog_bar=True)
         self.log('train_acc', acc, on_epoch=True, prog_bar=True)
-
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        """
-        Validation step.
-        
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        float
-            The loss value for the batch
-        """
-        texts = batch['phrase']
-        target = batch['target']
-
-        # Transform texts to BoW vectors
-        input_ids = torch.tensor(self.vectorizer.transform(texts), dtype=torch.float32, device=self.device)
-
-        output = self(input_ids)
-
-        loss = self.loss(output, target)
-        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
-
-        self.log('val_loss', loss, on_step=True, on_epoch=True)
-        self.log('val_acc', acc, on_step=True, on_epoch=True)
 
         return loss
 
@@ -262,57 +178,15 @@ class LitBowClassifier(LightningModule):
         return output, target, loss, acc
 
     def configure_optimizers(self):
-        """
-        Configure the optimizer.
-
-        Returns
-        -------
-        torch.optim.Optimizer
-            The optimizer to use
-        """
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
     def save(self, model_path, vectorizer_path):
-        """
-        Save the model and vectorizer.
-
-        Parameters
-        ----------
-        model_path: str
-            The path to save the model to
-        vectorizer_path: str
-            The path to save the vectorizer to
-        """
         torch.save(self.state_dict(), model_path)
         self.vectorizer.save(vectorizer_path)
 
     def load(self, model_path, vectorizer_path):
-        """
-        Load the model and vectorizer from files.
-
-        Parameters
-        ----------
-        model_path: str
-            The path to load the model from
-        vectorizer_path: str
-            The path to load the vectorizer from
-        """
         self.load_state_dict(torch.load(model_path))
         self.vectorizer.load(vectorizer_path)
 
     def fit_vectorizer(self, train_texts):
-        """
-        Fit the vectorizer.
-
-        Parameters
-        ----------
-        train_texts: list
-            The training texts
-        """
         self.vectorizer.fit_transform(train_texts)
-
-# Example usage (assuming train_texts and train_labels are available):
-# lit_model = LitPhraseClassifier(input_dim=1000)
-# lit_model.fit_vectorizer(train_texts)
-# trainer = pl.Trainer(max_epochs=10)
-# trainer.fit(lit_model, train_dataloader)

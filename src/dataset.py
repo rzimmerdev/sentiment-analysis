@@ -128,6 +128,7 @@ class FinancialPhraseDataset(PhraseDataset):
     - target: the target sentiment
 
     """
+
     def __init__(self,
                  tokenizer: torch.nn.Module = None,
                  path='data/archive.zip',
@@ -176,6 +177,15 @@ class FinancialPhraseDataset(PhraseDataset):
         super().__init__(x_col=1, y_col=0, tokenizer=tokenizer, data=self.data, max_len=max_len)
         self.data = self.preprocess(self.data)
         self.test_data = self.preprocess(self.test_data)
+        self.seed = seed
+
+    def balance_classes(self):
+        class_counts = self.data[0].value_counts()
+        min_count = class_counts.min()
+
+        balanced_data = self.data.groupby(0).apply(lambda x: x.sample(min_count, random_state=self.seed)).reset_index(
+            drop=True)
+        self.data = balanced_data
 
     def preprocess(self, data):
         """

@@ -8,8 +8,17 @@
 | Murilo Soave   | 10688813 |
 | Fernando Cesar | 10260559 |
 
-Tarefa: Classificação
-Dados: "Sentiment Analysis for Financial News"
+Tarefa: 
+**Classificação**
+
+Dados: 
+*"Sentiment Analysis for Financial News"*
+
+GitHub com resultados e códigos:
+https://github.com/rzimmerdev/sentiment-analysis
+
+Pesos: 
+https://github.com/rzimmerdev/sentiment-analysis/releases/latest
 
 ## Descrição da Tarefa
 
@@ -145,3 +154,51 @@ Congelamos os pesos do modelo bert-small e inserimos camadas adicionais que fora
 - batch_size=64
 - num_workers=8
 - lr=1e-4
+
+## Resultados
+
+Comparando os modelos.
+
+Para comparar os modelos, precisamos de uma função que carregue os pesos de um modelo treinado e calcule as métricas de avaliação.
+As métricas utilizadas são:
+
+- Acurácia: a porcentagem de previsões corretas.
+- Matriz de confusão: uma tabela que mostra o número de previsões corretas e incorretas.
+- F1 Score: a média ponderada da precisão e recall.
+- Log Loss: a função de perda logarítmica.
+- AUC: a área sob a curva ROC (Receiver Operating Characteristic).
+- AIC: o critério de informação de Akaike.
+
+Comparando os três modelos - o BOW como baseline, o Word2Vec e o Transformer - podemos ver que o Transformer obteve a melhor acurácia e F1 Score.
+O Word2Vec obteve a pior acurácia e F1 Score, mas ainda assim é um modelo razoável (não conseguiu gerar embeddings tão bons, pois não realizamos tokenização ou remoção de stopwords, logo o Transformer, que utiliza embeddings pré-treinados, se saiu melhor).
+O BOW obteve resultados intermediários, mas é o mais simples dos três modelos.
+
+Para acessar os gráficos de métricas, veja a pasta `results`.
+
+### BOW:
+
+- Test Accuracy: 0.6876288659793814
+- Test Loss: 3.4750539769234146
+- F1 Score: 0.6822113699098331
+- AIC: 44034747.60471523
+
+![Train Loss](results/bow_training_history.png)
+
+
+### W2V:
+
+- Test Accuracy: 0.5907216494845361
+- Test Loss: 5.526143588721228
+- F1 Score: 0.4387342905439264
+- AIC: 3608038.718562119
+
+![Train Loss](results/w2v_training_history.png)
+
+### Transformer:
+
+- Test Accuracy: 0.8030927835051547
+- Test Loss: 1.7498943486647303
+- F1 Score: 0.7983950697516664
+- AIC: 58845512.79503641
+
+![Train Loss](results/transformer_training_history.png)

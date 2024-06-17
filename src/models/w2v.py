@@ -4,14 +4,14 @@ from lightning import LightningModule
 from torch import nn
 from torchmetrics import Accuracy
 from gensim.models import Word2Vec
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
 
 
 class Word2VecVectorizer:
     """
     A Word2Vec vectorizer.
     """
-    def __init__(self, embedding_dim=2000):
+    def __init__(self, embedding_dim=300):
         """
         Initializes the vectorizer.
 
@@ -24,14 +24,6 @@ class Word2VecVectorizer:
         self.model = None
 
     def fit(self, sentences):
-        """
-        Fit the Word2Vec model.
-
-        Parameters
-        ----------
-        sentences: list of list of str
-            The sentences to fit the model on
-        """
         self.model = Word2Vec(sentences, vector_size=self.embedding_dim, window=5, min_count=1, workers=4)
 
     def transform(self, sentences):
@@ -48,30 +40,23 @@ class Word2VecVectorizer:
         torch.Tensor
             The transformed embeddings
         """
-        embeddings = [torch.tensor(np.array([self.model.wv[word] for word in sentence if word in self.model.wv]), dtype=torch.float32)
-                      for sentence in sentences]
-        return pad_sequence(embeddings, batch_first=True, padding_value=0.0)
+        embeddings = []
+        lengths = []
+
+        for sentence in sentences:
+            vectors = [self.model.wv[word] for word in sentence if word in self.model.wv]
+            embeddings.append(torch.tensor(np.array(vectors), dtype=torch.float32))
+            lengths.append(len(vectors))
+
+        padded_embeddings = pad_sequence(embeddings, batch_first=True, padding_value=0.0)
+        lengths = torch.tensor(np.array(lengths), dtype=torch.long)
+
+        return padded_embeddings, lengths
 
     def save(self, path):
-        """
-        Save the Word2Vec model to a file.
-
-        Parameters
-        ----------
-        path: str
-            The path to save the model to
-        """
         self.model.save(path)
 
     def load(self, path):
-        """
-        Load the Word2Vec model from a file.
-
-        Parameters
-        ----------
-        path: str
-            The path to load the model from
-        """
         self.model = Word2Vec.load(path)
 
 
@@ -95,42 +80,27 @@ class Word2VecClassifier(nn.Module):
             The number of LSTM layers
         """
         super().__init__()
-        self.softmax = nn.Softmax(dim=1)
-        self.lstm = nn.LSTM(embedding_dim, embedding_dim, num_layers=1, batch_first=True)
+        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True)
         self.classifier = nn.Sequential(
-            nn.Linear(embedding_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            *[nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.ReLU()
-            ) for _ in range(num_layers - 2)],
-            nn.Linear(hidden_dim, output_dim),
-            self.softmax
+            nn.Linear(hidden_dim, output_dim)
         )
 
-    def forward(self, x):
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        x: torch.Tensor
-            The input tensor
-
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        """
-        _, (hidden, _) = self.lstm(x)
-        return self.classifier(hidden[-1])
+    def forward(self, x, lengths):
+        packed_x = pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
+        packed_output, (hidden, _) = self.lstm(packed_x)
+        output, _ = pad_packed_sequence(packed_output, batch_first=True)
+        hidden = hidden[-1]
+        logits = self.classifier(hidden)
+        return logits
 
 
 class LitWord2VecClassifier(LightningModule):
     """
     A LightningModule for training the Word2Vec classifier.
     """
-    def __init__(self, embedding_dim, hidden_dim, output_dim=3, lr=1e-3, num_layers=8):
+    def __init__(self, embedding_dim, hidden_dim, output_dim=3, lr=1e-3, num_layers=1):
         """
         Initializes the LightningModule.
 
@@ -154,45 +124,18 @@ class LitWord2VecClassifier(LightningModule):
         self.accuracy = Accuracy(task='multiclass', num_classes=output_dim)
         self.vectorizer = Word2VecVectorizer(embedding_dim)
 
-    def forward(self, x):
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        x: torch.Tensor
-            The input tensor
-
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        """
-        return self.model(x)
+    def forward(self, x, lengths):
+        return self.model(x, lengths)
 
     def training_step(self, batch, batch_idx):
-        """
-        Training step.
-
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        float
-            The loss value for the batch
-        """
         texts = batch['phrase']
         target = batch['target']
 
         # Transform texts to Word2Vec embeddings
-        input_ids = self.vectorizer.transform(texts).to(self.device)
+        input_ids, lengths = self.vectorizer.transform([text.split() for text in texts])
+        input_ids, target = input_ids.to(self.device), target.to(self.device)
 
-        output = self(input_ids)
+        output = self(input_ids, lengths)
 
         loss = self.loss(output, target)
         acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
@@ -202,120 +145,32 @@ class LitWord2VecClassifier(LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        """
-        Validation step.
-
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        float
-            The loss value for the batch
-        """
-        texts = batch['phrase']
-        target = batch['target']
-
-        # Transform texts to Word2Vec embeddings
-        input_ids = self.vectorizer.transform(texts).to(self.device)
-
-        output = self(input_ids)
-
-        loss = self.loss(output, target)
-        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
-
-        self.log('val_loss', loss, on_step=True, on_epoch=True)
-        self.log('val_acc', acc, on_step=True, on_epoch=True)
-
-        return loss
-
     def test_step(self, batch, batch_idx):
-        """
-        Test step.
-
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        torch.Tensor
-            The target tensor
-        float
-            The loss value for the batch
-        float
-            The accuracy value for the batch
-        """
         texts = batch['phrase']
         target = batch['target']
 
         # Transform texts to Word2Vec embeddings
-        input_ids = self.vectorizer.transform(texts).to(self.device)
+        input_ids, lengths = self.vectorizer.transform([text.split() for text in texts])
+        input_ids, target = input_ids.to(self.device), target.to(self.device)
 
-        output = self(input_ids)
+        output = self(input_ids, lengths)
 
-        loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
+        loss = self.loss(output, torch.argmax(target, dim=1))
+        acc = self.accuracy(output, torch.argmax(target, dim=1))
 
         return output, target, loss, acc
 
     def configure_optimizers(self):
-        """
-        Configure the optimizer.
-
-        Returns
-        -------
-        torch.optim.Optimizer
-            The optimizer to use
-        """
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
     def save(self, model_path, vectorizer_path):
-        """
-        Save the model and vectorizer.
-
-        Parameters
-        ----------
-        model_path: str
-            The path to save the model to
-        vectorizer_path: str
-            The path to save the vectorizer to
-        """
         torch.save(self.state_dict(), model_path)
         self.vectorizer.save(vectorizer_path)
 
     def load(self, model_path, vectorizer_path):
-        """
-        Load the model and vectorizer from files.
-
-        Parameters
-        ----------
-        model_path: str
-            The path to load the model from
-        vectorizer_path: str
-            The path to load the vectorizer from
-        """
         self.load_state_dict(torch.load(model_path))
         self.vectorizer.load(vectorizer_path)
 
     def fit_vectorizer(self, train_texts):
-        """
-        Fit the vectorizer.
-
-        Parameters
-        ----------
-        train_texts: list of str
-            The training texts
-        """
         tokenized_texts = [text.split() for text in train_texts]
         self.vectorizer.fit(tokenized_texts)

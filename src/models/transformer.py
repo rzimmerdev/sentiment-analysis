@@ -88,39 +88,9 @@ class LitTransformerClassifier(LightningModule):
         self.accuracy = Accuracy(task='multiclass', num_classes=3)
 
     def forward(self, input_ids, attention_mask):
-        """
-        Forward pass.
-
-        Parameters
-        ----------
-        input_ids: torch.Tensor
-            The input IDs tensor
-        attention_mask: torch.Tensor
-            The attention mask tensor
-
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        """
         return self.model(input_ids, attention_mask)
 
     def training_step(self, batch, batch_idx):
-        """
-        Training step.
-
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        float
-            The loss value for the batch
-        """
         input_ids = batch['input_ids']
         attention_mask = batch['attention_mask']
         target = batch['target']
@@ -135,58 +105,7 @@ class LitTransformerClassifier(LightningModule):
 
         return loss
 
-    def validation_step(self, batch, batch_idx):
-        """
-        Validation step.
-
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        float
-            The loss value for the batch
-        """
-        input_ids = batch['input_ids']
-        attention_mask = batch['attention_mask']
-        target = batch['target']
-
-        output = self(input_ids, attention_mask)
-
-        loss = self.loss(output, target)
-        acc = self.accuracy(output, target)
-
-        self.log('val_loss', loss, on_step=True, on_epoch=True)
-        self.log('val_acc', acc, on_step=True, on_epoch=True)
-
-        return loss
-
     def test_step(self, batch, batch_idx):
-        """
-        Test step.
-
-        Parameters
-        ----------
-        batch: dict
-            The batch data
-        batch_idx: int
-            The batch index
-
-        Returns
-        -------
-        torch.Tensor
-            The output tensor
-        torch.Tensor
-            The target tensor
-        float
-            The loss value for the batch
-        float
-            The accuracy value for the batch
-        """
         input_ids = batch['input_ids']
         attention_mask = batch['attention_mask']
         target = batch['target']
@@ -199,23 +118,7 @@ class LitTransformerClassifier(LightningModule):
         return output, target, loss, acc
 
     def configure_optimizers(self):
-        """
-        Configure the optimizer.
-
-        Returns
-        -------
-        torch.optim.Optimizer
-            The optimizer to use
-        """
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
     def save(self, path):
-        """
-        Save the model.
-
-        Parameters
-        ----------
-        path: str
-            The path to save the model to
-        """
         torch.save(self.state_dict(), path)

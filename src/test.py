@@ -38,7 +38,7 @@ def evaluate(model, model_dir=None):
         vectorizer = model_path + '.pkl'
         lit_model.load(weights, vectorizer)
     elif model == 'w2v':
-        lit_model = LitWord2VecClassifier(embedding_dim=1000, hidden_dim=64, num_layers=6)
+        lit_model = LitWord2VecClassifier(embedding_dim=512, hidden_dim=128, num_layers=12)
         weights = model_path + '.pth'
         vectorizer = model_path + '.model'
         lit_model.load(weights, vectorizer)
