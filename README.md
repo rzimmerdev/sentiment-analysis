@@ -1,4 +1,5 @@
-# Redes Neurais e Aprendizado Profundo - Análise de Sentimento
+# sentiment-analysis
+`Análise de Sentimento em Notícias Financeiras`
 
 ## Grupo:
 
@@ -8,16 +9,16 @@
 | Murilo Soave   | 10688813 |
 | Fernando Cesar | 10260559 |
 
-Tarefa: 
+Tarefa: \
 **Classificação**
 
-Dados: 
+Dados: \
 *"Sentiment Analysis for Financial News"*
 
-GitHub com resultados e códigos:
+GitHub com resultados e códigos:\
 https://github.com/rzimmerdev/sentiment-analysis
 
-Pesos: 
+Pesos:\
 https://github.com/rzimmerdev/sentiment-analysis/releases/latest
 
 ## Descrição da Tarefa
@@ -40,7 +41,8 @@ no [Kaggle](https://www.kaggle.com/datasets/ankurzing/sentiment-analysis-for-fin
 Este dataset contém frases extraídas de relatórios financeiros e principalmente de artigos de notícias.
 
 É um dataset relativamente simples e pré-processado (até certo ponto, é necessário algumas transformações,
-principalmente para nossos modelos). Não é tão balanceado (59% positivas, 28% neutras e 12% negativas).
+principalmente para nossos modelos). Não é tão balanceado (59% positivas, 28% neutras e 12% negativas), 
+logo foi necessário realizar um balanceamento para que os modelos não ficassem enviesados (técnica de undersampling).
 
 # Abordagem Adotada
 
@@ -104,14 +106,14 @@ classificação para a label de sentimento.
 ### Hiperparâmetros:
 
 - input_dim=2000
-- hidden_dim=6
+- hidden_layers=6
 
 ### Argumentos de treino:
 
 - max_epochs=50
 - batch_size=64
 - num_workers=8
-- lr=1e-6
+- lr=1e-4
 
 ## Word To Vector (W2V)
 
@@ -123,16 +125,15 @@ parte do modelo de classificação, além das camadas lineares que tem como entr
 
 ### Hiperparâmetros:
 
-- embedding_dim=512
-- hidden_dim=256
-- num_layers=8
+- hidden_size=1024
+- hidden_layers=6
 
 ### Argumetnos de treino:
 
-- max_epochs=20
+- max_epochs=50
 - batch_size=64
 - num_workers=8
-- lr=1e-5
+- lr=1e-4
 
 ## Transformer (Transfer Learning baseado em pesos do Bert-Small)
 
@@ -150,14 +151,14 @@ Congelamos os pesos do modelo bert-small e inserimos camadas adicionais que fora
 
 ## Argumentos de treino:
 
-- max-epochs=10 (o modelo demora bastante para ser treinado)
+- max-epochs=50 (o modelo demora bastante para ser treinado)
 - batch_size=64
 - num_workers=8
 - lr=1e-4
 
 ## Resultados
 
-Comparando os modelos.
+Todos os resultados estão disponíveis na pasta [results](results).
 
 Para comparar os modelos, precisamos de uma função que carregue os pesos de um modelo treinado e calcule as métricas de avaliação.
 As métricas utilizadas são:
@@ -177,27 +178,47 @@ Para acessar os gráficos de métricas, veja a pasta `results`.
 
 ### BOW:
 
-- Test Accuracy: 0.6876288659793814
-- Test Loss: 3.4750539769234146
-- F1 Score: 0.6822113699098331
-- AIC: 44034747.60471523
+```
+              precision    recall  f1-score   support
 
-![Train Loss](results/w2v_training_history.png)
+     neutral       0.84      0.42      0.56       577
+    positive       0.40      0.81      0.54       286
+    negative       0.62      0.62      0.62       107
+
+    accuracy                           0.56       970
+   macro avg       0.62      0.62      0.57       970
+weighted avg       0.69      0.56      0.56       970
+```
+
+![Train Loss](results/bow/training.png)
 
 ### W2V:
+```
+              precision    recall  f1-score   support
 
-- Test Accuracy: 0.5907216494845361
-- Test Loss: 5.526143588721228
-- F1 Score: 0.4387342905439264
-- AIC: 3608038.718562119
+     neutral       0.86      0.78      0.82       577
+    positive       0.63      0.71      0.67       286
+    negative       0.56      0.67      0.61       107
 
-![Train Loss](results/w2v_training_history.png)
+    accuracy                           0.75       970
+   macro avg       0.69      0.72      0.70       970
+weighted avg       0.76      0.75      0.75       970
+```
+
+![Train Loss](results/w2v/training.png)
 
 ### Transformer:
 
-- Test Accuracy: 0.8030927835051547
-- Test Loss: 1.7498943486647303
-- F1 Score: 0.7983950697516664
-- AIC: 58845512.79503641
+```
+              precision    recall  f1-score   support
 
-![Train Loss](results/transformer_training_history.png)
+     neutral       0.85      0.76      0.80       577
+    positive       0.59      0.70      0.64       286
+    negative       0.53      0.57      0.55       107
+
+    accuracy                           0.72       970
+   macro avg       0.65      0.67      0.66       970
+weighted avg       0.73      0.72      0.72       970
+```
+
+![Train Loss](results/transformer/training.png)

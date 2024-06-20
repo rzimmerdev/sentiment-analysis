@@ -24,15 +24,10 @@ class TransformerClassifier(nn.Module):
         self.bert = bert
         embedding_dim = bert.config.to_dict()['hidden_size']
 
-        # Freeze the BERT model parameters
+        # Freeze the BERT model
         for param in self.bert.parameters():
             param.requires_grad = False
 
-        # Unfreeze the last layer
-        for param in self.bert.encoder.layer[-1].parameters():
-            param.requires_grad = True
-
-        self.softmax = nn.Softmax(dim=1)
         self.sequential = nn.Sequential(
             *[nn.Sequential(
                 nn.Linear(embedding_dim, embedding_dim),
@@ -41,7 +36,6 @@ class TransformerClassifier(nn.Module):
             nn.Linear(embedding_dim, embedding_dim // 2),
             nn.ReLU(),
             nn.Linear(embedding_dim // 2, output_dim),
-            self.softmax
         )
 
     def forward(self, input_ids, attention_mask):
@@ -63,6 +57,13 @@ class TransformerClassifier(nn.Module):
         output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         hidden_state = output.last_hidden_state
         return self.sequential(hidden_state[:, 0, :])
+
+    def load(self, path):
+        # save only the classifier state dict, and ignore bert
+        self.load_state_dict(torch.load(path))
+
+    def save(self, path):
+        torch.save(self.state_dict(), path)
 
 
 class LitTransformerClassifier(LightningModule):
@@ -105,6 +106,21 @@ class LitTransformerClassifier(LightningModule):
 
         return loss
 
+    def validation_step(self, batch, batch_idx):
+        input_ids = batch['input_ids']
+        attention_mask = batch['attention_mask']
+        target = batch['target']
+
+        output = self(input_ids, attention_mask)
+
+        loss = self.loss(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
+
+        self.log('val_loss', loss, on_epoch=True, on_step=True)
+        self.log('val_acc', acc, on_epoch=True, on_step=True)
+
+        return loss
+
     def test_step(self, batch, batch_idx):
         input_ids = batch['input_ids']
         attention_mask = batch['attention_mask']
@@ -121,4 +137,4 @@ class LitTransformerClassifier(LightningModule):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
     def save(self, path):
-        torch.save(self.state_dict(), path)
+        torch.save(self.model.state_dict(), path)

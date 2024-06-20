@@ -1,141 +1,109 @@
-import numpy as np
 import torch
 from lightning import LightningModule
 from torch import nn
 from torchmetrics import Accuracy
-from gensim.models import Word2Vec
-from torch.nn.utils.rnn import pad_sequence, pack_padded_sequence, pad_packed_sequence
+from transformers import BertTokenizer, BertModel
 
 
-class Word2VecVectorizer:
-    """
-    A Word2Vec vectorizer.
-    """
-    def __init__(self, embedding_dim=300):
-        """
-        Initializes the vectorizer.
-
-        Parameters
-        ----------
-        embedding_dim: int
-            The dimension of the word embeddings
-        """
-        self.embedding_dim = embedding_dim
-        self.model = None
-
-    def fit(self, sentences):
-        self.model = Word2Vec(sentences, vector_size=self.embedding_dim, window=5, min_count=1, workers=4)
-
-    def transform(self, sentences):
-        """
-        Transform the sentences to embeddings.
-
-        Parameters
-        ----------
-        sentences: list of list of str
-            The sentences to transform
-
-        Returns
-        -------
-        torch.Tensor
-            The transformed embeddings
-        """
-        embeddings = []
-        lengths = []
-
-        for sentence in sentences:
-            vectors = [self.model.wv[word] for word in sentence if word in self.model.wv]
-            embeddings.append(torch.tensor(np.array(vectors), dtype=torch.float32))
-            lengths.append(len(vectors))
-
-        padded_embeddings = pad_sequence(embeddings, batch_first=True, padding_value=0.0)
-        lengths = torch.tensor(np.array(lengths), dtype=torch.long)
-
-        return padded_embeddings, lengths
-
-    def save(self, path):
-        self.model.save(path)
-
-    def load(self, path):
-        self.model = Word2Vec.load(path)
+# use tokenizer from hugging face
 
 
-class Word2VecClassifier(nn.Module):
-    """
-    A Word2Vec-based classifier.
-    """
-    def __init__(self, embedding_dim, hidden_dim, output_dim, num_layers=1):
-        """
-        Initializes the classifier.
+class W2VClassifier(nn.Module):
+    """A Word2Vec classifier with an LSTM layer."""
 
-        Parameters
-        ----------
-        embedding_dim: int
-            The dimension of the word embeddings
-        hidden_dim: int
-            The dimension of the hidden layer
-        output_dim: int
-            The output dimension
-        num_layers: int
-            The number of LSTM layers
-        """
+    def __init__(self, hidden_size, hidden_layers=5, output_dim=3, device=None):
         super().__init__()
-        self.lstm = nn.LSTM(embedding_dim, hidden_dim, num_layers=num_layers, batch_first=True)
-        self.classifier = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+        # Load pre-trained bert tokenizer and embedding
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.embedding = BertModel.from_pretrained('bert-base-uncased')
+
+        # freeze
+        for param in self.embedding.parameters():
+            param.requires_grad = False
+
+        embed_dim = self.embedding.config.to_dict()['hidden_size']
+
+        self.lstm = nn.LSTM(embed_dim, hidden_size, batch_first=True)
+        self.sequential = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size),
             nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim)
+            *[nn.Sequential(
+                nn.Linear(hidden_size, hidden_size),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.BatchNorm1d(hidden_size),
+            ) for _ in range(hidden_layers - 1)],
+            nn.Linear(hidden_size, hidden_size // 2),
+            nn.ReLU(),
+            nn.Linear(hidden_size // 2, output_dim),
         )
 
-    def forward(self, x, lengths):
-        packed_x = pack_padded_sequence(x, lengths.cpu(), batch_first=True, enforce_sorted=False)
-        packed_output, (hidden, _) = self.lstm(packed_x)
-        output, _ = pad_packed_sequence(packed_output, batch_first=True)
-        hidden = hidden[-1]
-        logits = self.classifier(hidden)
-        return logits
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+
+    def forward(self, x):
+        x, _ = self.lstm(x)
+        x = x[:, -1, :]
+
+        return self.sequential(x)
+
+    def transform(self, texts):
+        inputs = self.tokenizer(texts, return_tensors='pt', padding=True, truncation=True, max_length=512)
+        # Move inputs to the device
+        for key in inputs:
+            inputs[key] = inputs[key].to(self.device)
+        return self.embedding(**inputs).last_hidden_state
 
 
-class LitWord2VecClassifier(LightningModule):
-    """
-    A LightningModule for training the Word2Vec classifier.
-    """
-    def __init__(self, embedding_dim, hidden_dim, output_dim=3, lr=1e-3, num_layers=1):
+class LitW2VClassifier(LightningModule):
+    def __init__(self, hidden_size=1000, hidden_layers=5, lr=1e-3):
         """
         Initializes the LightningModule.
 
         Parameters
         ----------
-        embedding_dim: int
-            The dimension of the word embeddings
+        vocab_size: int
+            The vocabulary size
+        embed_dim: int
+            The embedding dimension
         hidden_dim: int
-            The dimension of the hidden layer
-        output_dim: int
-            The output dimension
+            The LSTM hidden dimension
         lr: float
             The learning rate
-        num_layers: int
-            The number of LSTM layers
         """
         super().__init__()
-        self.model = Word2VecClassifier(embedding_dim, hidden_dim, output_dim, num_layers)
+        self.model = W2VClassifier(hidden_size, hidden_layers, 3, self.device)
         self.lr = lr
         self.loss = nn.CrossEntropyLoss()
-        self.accuracy = Accuracy(task='multiclass', num_classes=output_dim)
-        self.vectorizer = Word2VecVectorizer(embedding_dim)
+        self.accuracy = Accuracy(task='multiclass', num_classes=3)
 
-    def forward(self, x, lengths):
-        return self.model(x, lengths)
+    def forward(self, x):
+        return self.model(x)
+
+    def transform(self, texts):  # returns a tensor, where each row is a BoW vector (1 x vocab_size)
+        return self.model.transform(texts)
 
     def training_step(self, batch, batch_idx):
+        """
+        Training step.
+
+        Parameters
+        ----------
+        batch: dict
+            The batch data
+        batch_idx: int
+            The batch index
+
+        Returns
+        -------
+        float
+            The loss value for the batch
+        """
         texts = batch['phrase']
         target = batch['target']
 
-        # Transform texts to Word2Vec embeddings
-        input_ids, lengths = self.vectorizer.transform([text.split() for text in texts])
-        input_ids, target = input_ids.to(self.device), target.to(self.device)
-
-        output = self(input_ids, lengths)
+        # Transform texts to W2V vectors
+        embedding = self.transform(texts)
+        output = self(embedding)
 
         loss = self.loss(output, target)
         acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
@@ -145,32 +113,61 @@ class LitWord2VecClassifier(LightningModule):
 
         return loss
 
-    def test_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx):
         texts = batch['phrase']
         target = batch['target']
 
-        # Transform texts to Word2Vec embeddings
-        input_ids, lengths = self.vectorizer.transform([text.split() for text in texts])
-        input_ids, target = input_ids.to(self.device), target.to(self.device)
+        # Transform texts to W2V vectors
+        embedding = self.transform(texts)
+        output = self(embedding)
 
-        output = self(input_ids, lengths)
+        loss = self.loss(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
 
-        loss = self.loss(output, torch.argmax(target, dim=1))
-        acc = self.accuracy(output, torch.argmax(target, dim=1))
+        self.log('val_loss', loss, on_epoch=True, on_step=True)
+        self.log('val_acc', acc, on_epoch=True, on_step=True)
+
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        """
+        Test step.
+
+        Parameters
+        ----------
+        batch: dict
+            The batch data
+        batch_idx: int
+            The batch index
+
+        Returns
+        -------
+        torch.Tensor
+            The output tensor
+        torch.Tensor
+            The target tensor
+        float
+            The loss value for the batch
+        float
+            The accuracy value for the batch
+        """
+        texts = batch['phrase']
+        target = batch['target']
+
+        # Transform texts to W2V vectors
+        embedding = self.transform(texts)
+        output = self(embedding)
+
+        loss = self.loss(output, target)
+        acc = self.accuracy(output, target)
 
         return output, target, loss, acc
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
 
-    def save(self, model_path, vectorizer_path):
-        torch.save(self.state_dict(), model_path)
-        self.vectorizer.save(vectorizer_path)
+    def save(self, path):
+        torch.save(self.model.state_dict(), path)
 
-    def load(self, model_path, vectorizer_path):
-        self.load_state_dict(torch.load(model_path))
-        self.vectorizer.load(vectorizer_path)
-
-    def fit_vectorizer(self, train_texts):
-        tokenized_texts = [text.split() for text in train_texts]
-        self.vectorizer.fit(tokenized_texts)
+    def load(self, path):
+        self.model.load_state_dict(torch.load(path))

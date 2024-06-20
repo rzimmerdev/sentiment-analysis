@@ -5,3 +5,8 @@
 *.pyc
 *.csv
 *.txt
+*.pth
+*.ckpt
+*.pkl
+
+logs/

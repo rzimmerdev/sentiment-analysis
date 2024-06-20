@@ -2,10 +2,10 @@ from enum import Enum
 
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import roc_curve, auc, confusion_matrix, f1_score, accuracy_score, log_loss
+from sklearn.metrics import roc_curve, auc, confusion_matrix, f1_score, accuracy_score, log_loss, classification_report
 from models.transformer import LitTransformerClassifier
 from models.bow import LitBowClassifier
-from models.w2v import LitWord2VecClassifier
+from models.w2v import LitW2VClassifier
 from dataset import FinancialPhraseDataset
 
 
@@ -38,10 +38,9 @@ def evaluate(model, model_dir=None):
         vectorizer = model_path + '.pkl'
         lit_model.load(weights, vectorizer)
     elif model == 'w2v':
-        lit_model = LitWord2VecClassifier(embedding_dim=512, hidden_dim=128, num_layers=12)
+        lit_model = LitW2VClassifier(hidden_size=1024, hidden_layers=6)
         weights = model_path + '.pth'
-        vectorizer = model_path + '.model'
-        lit_model.load(weights, vectorizer)
+        lit_model.load(weights)
     elif model == 'transformer':
         weights = model_path + '.ckpt'
         lit_model = LitTransformerClassifier.load_from_checkpoint(weights, hidden_layers=3)
@@ -93,7 +92,7 @@ def evaluate(model, model_dir=None):
         plt.ylabel('True Positive Rate')
         plt.title('Receiver Operating Characteristic')
         plt.legend(loc="lower right")
-        plt.savefig(f'results/{model}_class_{i}_roc.png')
+        plt.savefig(f'results/{model}/class_{i}_roc.png')
 
     plt.figure()
     plt.imshow(conf_matrix, interpolation='nearest', cmap='viridis')
@@ -101,7 +100,7 @@ def evaluate(model, model_dir=None):
     plt.colorbar()
     plt.ylabel('True label')
     plt.xlabel('Predicted label')
-    plt.savefig(f'results/{model}_confusion_matrix.png')
+    plt.savefig(f'results/{model}/confusion_matrix.png')
 
     # AIC Score (assuming a binomial model, and AIC = 2k - 2ln(L))
     # k = num of model params
@@ -111,8 +110,15 @@ def evaluate(model, model_dir=None):
 
     print(f'Test Accuracy: {test_accuracy}')
     print(f'Test Loss: {test_loss}')
-    print(f'F1 Score: {f1}')
     print(f'AIC: {AIC}')
+    print(conf_matrix)
+
+    # micro and macro scores for: precision, recall, f1
+    report = classification_report(target, pred, target_names=['neutral', 'positive', 'negative'])
+    print(report)
+    # save to csv
+    with open(f'results/{model}/report.txt', 'w') as f:
+        f.write(report)
 
 
 class Models(Enum):

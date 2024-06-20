@@ -179,13 +179,31 @@ class FinancialPhraseDataset(PhraseDataset):
         self.test_data = self.preprocess(self.test_data)
         self.seed = seed
 
-    def balance_classes(self):
-        class_counts = self.data[0].value_counts()
-        min_count = class_counts.min()
+        self.data = self.balance_classes()
+        self.data = self.data.sample(frac=1, random_state=self.seed).reset_index(drop=True)
 
-        balanced_data = self.data.groupby(0).apply(lambda x: x.sample(min_count, random_state=self.seed)).reset_index(
-            drop=True)
-        self.data = balanced_data
+    def balance_classes(self, oversample=False):
+        class_counts = self.data[0].value_counts()
+
+        new_data = pd.DataFrame(columns=self.data.columns)
+
+        if oversample:
+            # oversample the minority classes
+            max_class_count = class_counts.max()
+            for class_label, count in class_counts.items():
+                class_data = self.data[self.data[0] == class_label]
+                oversampled_data = class_data.sample(n=max_class_count - count, replace=True, random_state=self.seed)
+                new_data = pd.concat([new_data, oversampled_data])
+
+        else:
+            # undersample the majority classes
+            min_class_count = class_counts.min()
+            for class_label, count in class_counts.items():
+                class_data = self.data[self.data[0] == class_label]
+                undersampled_data = class_data.sample(n=min_class_count, random_state=self.seed)
+                new_data = pd.concat([new_data, undersampled_data])
+
+        return new_data
 
     def preprocess(self, data):
         """

@@ -68,17 +68,14 @@ class BowClassifier(nn.Module):
         """
         super().__init__()
 
-        self.softmax = nn.Softmax(dim=1)
-
         self.sequential = nn.Sequential(
             *[nn.Sequential(
                 nn.Linear(input_dim, input_dim),
-                nn.ReLU()
+                nn.ReLU(),
             ) for _ in range(hidden_layers - 1)],
             nn.Linear(input_dim, input_dim // 2),
             nn.ReLU(),
             nn.Linear(input_dim // 2, output_dim),
-            self.softmax
         )
 
     def forward(self, x):
@@ -139,6 +136,23 @@ class LitBowClassifier(LightningModule):
 
         self.log('train_loss', loss, on_epoch=True, prog_bar=True)
         self.log('train_acc', acc, on_epoch=True, prog_bar=True)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        texts = batch['phrase']
+        target = batch['target']
+
+        # Transform texts to BoW vectors
+        input_ids = torch.tensor(self.vectorizer.transform(texts), dtype=torch.float32, device=self.device)
+
+        output = self(input_ids)
+
+        loss = self.loss(output, target)
+        acc = self.accuracy(torch.argmax(output, dim=1), torch.argmax(target, dim=1))
+
+        self.log('val_loss', loss, on_epoch=True, on_step=True)
+        self.log('val_acc', acc, on_epoch=True, on_step=True)
 
         return loss
 

@@ -1,54 +1,17 @@
 import os
 from enum import Enum
 
-import pandas as pd
 from lightning import Trainer
+from lightning.pytorch.callbacks import EarlyStopping
 from lightning.pytorch.loggers import CSVLogger
-import matplotlib.pyplot as plt
 from models.transformer import LitTransformerClassifier
 from models.bow import LitBowClassifier
-from models.w2v import LitWord2VecClassifier
+from models.w2v import LitW2VClassifier
 from dataset import FinancialPhraseDataset
+from plot import plot_training_history
 
 
-def plot_training_history(log_dir, model):
-    """"
-    Plot the training history of a model.
-
-    Parameters
-    ----------
-    log_dir: str
-        The path to the log directory of the model
-    model: str
-        The model name used in the title of the plot.
-    """
-    metrics = pd.read_csv(f'{log_dir}/metrics.csv')
-    plt.figure()
-
-    # Make a 1/30 moving average
-    window = 10
-    metrics['train_loss_step'] = metrics['train_loss_step'].bfill().rolling(window=window).mean()
-    metrics['train_acc_step'] = metrics['train_acc_step'].bfill().rolling(window=window).mean()
-
-    fig, ax1 = plt.subplots()
-
-    ax1.set_xlabel('Step')
-    ax1.set_ylabel('Training Loss', color='tab:blue')
-    ax1.plot(metrics['step'], metrics['train_loss_step'], label='Training Loss', color='tab:blue')
-    ax1.tick_params(axis='y', labelcolor='tab:blue')
-
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Training Accuracy', color='tab:orange')
-    ax2.plot(metrics['step'], metrics['train_acc_step'], label='Training Accuracy', color='tab:orange')
-    ax2.tick_params(axis='y', labelcolor='tab:orange')
-
-    fig.tight_layout()
-    plt.title(f'Training History - {model}')
-    fig.legend(loc='upper left', bbox_to_anchor=(0.1, 0.9))
-    plt.savefig(f'results/{model}_training_history.png')
-
-
-def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
+def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5, path='checkpoints'):
     """
     Train a sentiment analysis model.
 
@@ -64,25 +27,40 @@ def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
         The number of workers to use
     lr: float
         The learning rate
+    path: str
+        The path to save the model and load previous models from
     """
     dataset = FinancialPhraseDataset()
     print(f"Training {model} model")
     print(f"Maimum number of epochs: {max_epochs}. "
           f"Batch size: {batch_size}. Number of workers: {num_workers}. Learning rate: {lr}")
-    train_loader, _ = dataset.get_data_loaders(batch_size=batch_size, num_workers=num_workers, train_size=1)
+    train_loader, val_loader = dataset.get_data_loaders(batch_size=batch_size, num_workers=num_workers, train_size=0.8)
     lr = float(lr)
 
+    if not os.path.exists(path):
+        os.makedirs(path)
+
     if model == 'bow':
-        model_path = 'checkpoints/bow'
+        model_path = f'{path}/bow'
         lit_model = LitBowClassifier(2000, 6, lr=lr)
-        lit_model.fit_vectorizer(dataset.data[1])
+        if not os.path.exists(f'{path}/bow.pkl'):
+            lit_model.fit_vectorizer(dataset.data[1])
+        else:
+            lit_model.load(model_path + '.pth', model_path + '.pkl')
     elif model == 'w2v':
-        model_path = 'checkpoints/w2v'
-        lit_model = LitWord2VecClassifier(embedding_dim=512, hidden_dim=128, num_layers=12, lr=lr)
-        lit_model.fit_vectorizer(dataset.data[1])
+        model_path = f'{path}/w2v'
+        lit_model = LitW2VClassifier(hidden_size=1024, hidden_layers=6, lr=lr)
+        if not os.path.exists(f'{path}/w2v.model'):
+            pass
+        else:
+            lit_model.load(model_path + '.pth')
     elif model == 'transformer':
-        model_path = 'checkpoints/transformer'
+        model_path = f'{path}/transformer'
         lit_model = LitTransformerClassifier(hidden_layers=3, lr=lr)
+        if not os.path.exists(f'{path}/transformer.ckpt'):
+            pass
+        else:
+            lit_model = LitTransformerClassifier.load_from_checkpoint(model_path + '.ckpt', hidden_layers=3, lr=lr)
     else:
         raise ValueError('Unknown model')
 
@@ -90,13 +68,17 @@ def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
 
-    logger = CSVLogger("logs", name=model)
-    trainer = Trainer(max_epochs=max_epochs, logger=logger)
-    trainer.fit(model=lit_model, train_dataloaders=train_loader)
+    early_stop_callback = EarlyStopping(
+        monitor='val_loss',
+        patience=5,
+        verbose=True,
+        mode='min',
+        min_delta=1e-4
+    )  # if val_loss does not improve for 7 epochs, stop training
 
-    # if directory does not exist, create it
-    if not os.path.exists('checkpoints'):
-        os.makedirs('checkpoints')
+    logger = CSVLogger("logs", name=model)
+    trainer = Trainer(max_epochs=max_epochs, logger=logger, callbacks=[early_stop_callback], log_every_n_steps=1)
+    trainer.fit(model=lit_model, train_dataloaders=train_loader, val_dataloaders=val_loader)
 
     # save model
     if model == 'transformer':
@@ -104,13 +86,19 @@ def train(model, max_epochs=5, batch_size=64, num_workers=4, lr=1e-5):
     elif model == 'bow':
         lit_model.save(model_path + '.pth', model_path + '.pkl')
     elif model == 'w2v':
-        lit_model.save(model_path + '.pth', model_path + '.model')
+        lit_model.save(model_path + '.pth')
 
     # save results
     # list all versions, and access metrics from latest
     version = max([int(version.split('_')[-1]) for version in os.listdir(f'logs/{model}')])
     log_dir = os.path.join(f'logs/{model}', f'version_{version}')
     plot_training_history(log_dir, model)
+
+    # save train params to txt
+    with open(f'{model_path}.txt', 'w') as f:
+        f.write(f"Training **{model}** model\n")
+        f.write(f"epochs, batch_size, num_workers, lr\n")
+        f.write(f"{max_epochs}, {batch_size}, {num_workers}, {lr}\n")
 
 
 class Models(Enum):
