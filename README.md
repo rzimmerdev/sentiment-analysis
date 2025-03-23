@@ -1,16 +1,5 @@
 # Sentiment Analysis in Financial News
 
-## Group:  
-
-| Name          | nUSP     |  
-|--------------|---------|  
-| Rafael Zimmer | 12542612 |  
-| Murilo Soave | 10688813 |  
-| Fernando Cesar | 10260559 |  
-
-Task: **Classification**  
-Data: *"Sentiment Analysis for Financial News"*  
-
 Model Weights:  
 [https://github.com/rzimmerdev/sentiment-analysis/releases/latest](https://github.com/rzimmerdev/sentiment-analysis/releases/latest)  
 
@@ -198,5 +187,3 @@ weighted avg       0.69      0.56      0.56       970
 ![Train Loss](results/transformer/training.png)  
 
 ---
-
-This should fully translate your README. Let me know if you'd like any refinements. 🚀
